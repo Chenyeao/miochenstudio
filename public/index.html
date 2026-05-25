@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="format-detection" content="telephone=no">
+<title>Aibo Studio - 摄影师作品集</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<div class="app-container" id="app">
+  <nav class="top-nav" id="topNav">
+    <div class="nav-inner">
+      <a class="nav-back" id="backBtn" style="display:none" href="javascript:history.back()">‹ 返回</a>
+      <a class="nav-brand" href="/" onclick="return route('/')">Aibo Studio</a>
+      <div class="nav-links" id="navLinks">
+        <a class="nav-link" href="/portfolio" onclick="return route('/portfolio')">作品集</a>
+        <a class="nav-link" href="/costume" onclick="return route('/costume')">服装馆</a>
+        <a class="nav-link" href="/about" onclick="return route('/about')">关于</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page-content" id="pageContent"></div>
+
+  <div class="bottom-tabs" id="bottomTabs">
+    <a class="tab-item active" href="/" onclick="return route('/')"><span class="tab-icon">🏠</span><span>首页</span></a>
+    <a class="tab-item" href="/portfolio" onclick="return route('/portfolio')"><span class="tab-icon">🖼️</span><span>作品</span></a>
+    <a class="tab-item" href="/costume" onclick="return route('/costume')"><span class="tab-icon">👗</span><span>服装</span></a>
+    <a class="tab-item" href="/about" onclick="return route('/about')"><span class="tab-icon">ℹ️</span><span>关于</span></a>
+  </div>
+
+  <button class="float-book" id="floatBook" onclick="onBook()">预约<br>拍摄</button>
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
