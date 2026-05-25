@@ -15,28 +15,7 @@ const DB_PATH = path.join(__dirname, 'photographer.db');
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
-// 自动建表
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS photographer (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL DEFAULT '摄影师', avatar TEXT DEFAULT '', intro TEXT DEFAULT '', wechat TEXT DEFAULT '', wechat_qrcode TEXT DEFAULT '', phone TEXT DEFAULT '', xiaohongshu TEXT DEFAULT '', weibo TEXT DEFAULT '', studio_intro TEXT DEFAULT '', years_exp TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS banner (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT DEFAULT '', subtitle TEXT DEFAULT '', image_url TEXT DEFAULT '', sort INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS service_item (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, icon TEXT DEFAULT '', sort INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS studio_image (id INTEGER PRIMARY KEY AUTOINCREMENT, image_url TEXT DEFAULT '', caption TEXT DEFAULT '', sort INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS review (id INTEGER PRIMARY KEY AUTOINCREMENT, nickname TEXT DEFAULT '', avatar TEXT DEFAULT '', content TEXT DEFAULT '', sort INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS portfolio_category (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, sort INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS portfolio (id INTEGER PRIMARY KEY AUTOINCREMENT, category_id INTEGER, title TEXT DEFAULT '', cover TEXT DEFAULT '', location TEXT DEFAULT '', shoot_date TEXT DEFAULT '', sort INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS portfolio_image (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER, image_url TEXT DEFAULT '', sort INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS costume_category (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, sort INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS costume (id INTEGER PRIMARY KEY AUTOINCREMENT, category_id INTEGER, name TEXT DEFAULT '', cover TEXT DEFAULT '', size TEXT DEFAULT '', height_range TEXT DEFAULT '', tags TEXT DEFAULT '', notes TEXT DEFAULT '', status INTEGER DEFAULT 1, sort INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS costume_image (id INTEGER PRIMARY KEY AUTOINCREMENT, costume_id INTEGER, image_url TEXT DEFAULT '', sort INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS admin (id INTEGER PRIMARY KEY AUTOINCREMENT, openid TEXT UNIQUE NOT NULL, nickname TEXT DEFAULT '', avatar TEXT DEFAULT '');
-`;
-SCHEMA.split('CREATE TABLE').filter(Boolean).forEach(t => {
-  try { db.exec('CREATE TABLE IF NOT EXISTS ' + t); } catch (e) {}
-});
-
-// ============================================================
 // 中间件
-// ============================================================
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -50,7 +29,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.random().toString(36).substring(2,8) + path.extname(file.originalname))
 });
-const upload = multer({ storage, limits: { fileSize: 10*1024*1024 }, fileFilter: (req, file, cb) => cb(null, /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(path.extname(file.originalname))) });
+const upload = multer({ storage, limits: { fileSize: 20*1024*1024 }, fileFilter: (req, file, cb) => cb(null, /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(path.extname(file.originalname))) });
 
 // ============================================================
 // 上传
@@ -87,8 +66,8 @@ app.get('/api/portfolios', (req, res) => {
   res.json({
     categories: db.prepare('SELECT * FROM portfolio_category ORDER BY sort ASC').all(),
     portfolios: category_id && category_id !== 'all'
-      ? db.prepare('SELECT * FROM portfolio WHERE category_id = ? ORDER BY sort ASC').all(category_id)
-      : db.prepare('SELECT * FROM portfolio ORDER BY sort ASC').all()
+      ? db.prepare('SELECT * FROM portfolio WHERE category_id = ? ORDER BY sort DESC').all(category_id)
+      : db.prepare('SELECT * FROM portfolio ORDER BY sort DESC').all()
   });
 });
 
@@ -106,8 +85,8 @@ app.get('/api/costumes', (req, res) => {
   res.json({
     categories: db.prepare('SELECT * FROM costume_category ORDER BY sort ASC').all(),
     costumes: category_id && category_id !== 'all'
-      ? db.prepare('SELECT * FROM costume WHERE category_id = ? AND status = 1 ORDER BY sort ASC').all(category_id)
-      : db.prepare('SELECT * FROM costume WHERE status = 1 ORDER BY sort ASC').all()
+      ? db.prepare('SELECT * FROM costume WHERE category_id = ? AND status = 1 ORDER BY sort DESC').all(category_id)
+      : db.prepare('SELECT * FROM costume WHERE status = 1 ORDER BY sort DESC').all()
   });
 });
 
@@ -120,15 +99,44 @@ app.get('/api/costumes/:id', (req, res) => {
   res.json(c);
 });
 
-app.get('/api/about', (req, res) => {
-  res.json({
-    photographer: db.prepare('SELECT * FROM photographer WHERE id = 1').get() || {},
-    studioImages: db.prepare('SELECT * FROM studio_image ORDER BY sort ASC').all()
-  });
+// ============================================================
+// 用户系统
+// ============================================================
+// 注册
+app.post('/api/user/register', (req, res) => {
+  const { username, password, nickname, age, gender, phone } = req.body;
+  if (!username || !password) return res.status(400).json({ error: '用户名和密码不能为空' });
+  try {
+    const id = db.prepare('INSERT INTO user_account(username,password,nickname,age,gender,phone) VALUES(?,?,?,?,?,?)')
+      .run(username, password, nickname||username, age||0, gender||'', phone||'').lastInsertRowid;
+    res.json({ success: true, id, username });
+  } catch(e) {
+    res.status(400).json({ error: '用户名已存在' });
+  }
+});
+
+// 登录
+app.post('/api/user/login', (req, res) => {
+  const { username, password } = req.body;
+  const u = db.prepare('SELECT id,username,nickname,age,gender,phone,avatar FROM user_account WHERE username=? AND password=?').get(username, password);
+  if (u) {
+    res.json({ success: true, user: u });
+  } else {
+    res.status(401).json({ error: '用户名或密码错误' });
+  }
+});
+
+// 修改资料
+app.put('/api/user/profile', (req, res) => {
+  const { id, nickname, age, gender, phone, avatar } = req.body;
+  if (!id) return res.status(400).json({ error: '缺少用户ID' });
+  db.prepare('UPDATE user_account SET nickname=?,age=?,gender=?,phone=?,avatar=?,updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(nickname||'', age||0, gender||'', phone||'', avatar||'', id);
+  res.json({ success: true });
 });
 
 // ============================================================
-// 管理 API
+// 管理 API - 鉴权
 // ============================================================
 function auth(req, res, next) {
   const token = req.headers['x-admin-token'];
@@ -139,14 +147,15 @@ function auth(req, res, next) {
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   if (password === 'admin123') {
-    // 返回一个简单 token
     res.json({ success: true, token: 'photographer_admin_token', nickname: '摄影师' });
   } else {
     res.status(401).json({ error: '密码错误' });
   }
 });
 
-// 首页数据
+// ============================================================
+// 管理 API - 首页管理
+// ============================================================
 app.get('/api/admin/home', auth, (req, res) => {
   res.json({
     photographer: db.prepare('SELECT * FROM photographer WHERE id = 1').get() || {},
@@ -171,7 +180,6 @@ app.put('/api/admin/photographer', auth, (req, res) => {
 });
 
 // Banner
-app.get('/api/admin/banners', auth, (req, res) => res.json(db.prepare('SELECT * FROM banner ORDER BY sort ASC').all()));
 app.post('/api/admin/banners', auth, (req, res) => {
   const d = req.body;
   const s = db.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM banner').get();
@@ -180,25 +188,13 @@ app.post('/api/admin/banners', auth, (req, res) => {
 app.delete('/api/admin/banners/:id', auth, (req, res) => { db.prepare('DELETE FROM banner WHERE id=?').run(req.params.id); res.json({ success: true }); });
 
 // 服务
-app.get('/api/admin/services', auth, (req, res) => res.json(db.prepare('SELECT * FROM service_item ORDER BY sort ASC').all()));
 app.post('/api/admin/services', auth, (req, res) => {
-  const d = req.body;
   const s = db.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM service_item').get();
-  res.json({ id: db.prepare('INSERT INTO service_item(name,icon,sort) VALUES(?,?,?)').run(d.name, d.icon||'', s.s).lastInsertRowid });
+  res.json({ id: db.prepare('INSERT INTO service_item(name,icon,sort) VALUES(?,?,?)').run(req.body.name, req.body.icon||'', s.s).lastInsertRowid });
 });
 app.delete('/api/admin/services/:id', auth, (req, res) => { db.prepare('DELETE FROM service_item WHERE id=?').run(req.params.id); res.json({ success: true }); });
 
-// 工作室图片
-app.get('/api/admin/studio-images', auth, (req, res) => res.json(db.prepare('SELECT * FROM studio_image ORDER BY sort ASC').all()));
-app.post('/api/admin/studio-images', auth, (req, res) => {
-  const d = req.body;
-  const s = db.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM studio_image').get();
-  res.json({ id: db.prepare('INSERT INTO studio_image(image_url,caption,sort) VALUES(?,?,?)').run(d.image_url||'', d.caption||'', s.s).lastInsertRowid });
-});
-app.delete('/api/admin/studio-images/:id', auth, (req, res) => { db.prepare('DELETE FROM studio_image WHERE id=?').run(req.params.id); res.json({ success: true }); });
-
 // 评价
-app.get('/api/admin/reviews', auth, (req, res) => res.json(db.prepare('SELECT * FROM review ORDER BY sort ASC').all()));
 app.post('/api/admin/reviews', auth, (req, res) => {
   const d = req.body;
   const s = db.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM review').get();
@@ -206,29 +202,62 @@ app.post('/api/admin/reviews', auth, (req, res) => {
 });
 app.delete('/api/admin/reviews/:id', auth, (req, res) => { db.prepare('DELETE FROM review WHERE id=?').run(req.params.id); res.json({ success: true }); });
 
-// 作品
-app.get('/api/admin/portfolios', auth, (req, res) => {
-  res.json({ categories: db.prepare('SELECT * FROM portfolio_category ORDER BY sort ASC').all(), portfolios: db.prepare('SELECT * FROM portfolio ORDER BY sort ASC').all() });
+// 工作室图片
+app.post('/api/admin/studio-images', auth, (req, res) => {
+  const d = req.body;
+  const s = db.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM studio_image').get();
+  res.json({ id: db.prepare('INSERT INTO studio_image(image_url,caption,sort) VALUES(?,?,?)').run(d.image_url||'', d.caption||'', s.s).lastInsertRowid });
 });
+app.delete('/api/admin/studio-images/:id', auth, (req, res) => { db.prepare('DELETE FROM studio_image WHERE id=?').run(req.params.id); res.json({ success: true }); });
+
+// ============================================================
+// 管理 API - 作品管理（完整 CRUD）
+// ============================================================
+app.get('/api/admin/portfolios', auth, (req, res) => {
+  res.json({
+    categories: db.prepare('SELECT * FROM portfolio_category ORDER BY sort ASC').all(),
+    portfolios: db.prepare('SELECT p.*, pc.name as category_name FROM portfolio p LEFT JOIN portfolio_category pc ON p.category_id = pc.id ORDER BY p.sort DESC').all()
+  });
+});
+
+app.get('/api/admin/portfolios/:id', auth, (req, res) => {
+  const p = db.prepare('SELECT p.*, pc.name as category_name FROM portfolio p LEFT JOIN portfolio_category pc ON p.category_id = pc.id WHERE p.id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: '不存在' });
+  p.images = db.prepare('SELECT * FROM portfolio_image WHERE portfolio_id=? ORDER BY sort ASC').all(req.params.id);
+  res.json(p);
+});
+
 app.post('/api/admin/portfolios', auth, (req, res) => {
   const d = req.body;
   const s = db.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM portfolio').get();
-  res.json({ id: db.prepare('INSERT INTO portfolio(title,category_id,cover,location,shoot_date,sort) VALUES(?,?,?,?,?,?)').run(d.title||'', d.category_id||1, d.cover||'', d.location||'', d.shoot_date||'', s.s).lastInsertRowid });
+  const r = db.prepare('INSERT INTO portfolio(title,category_id,cover,location,shoot_date,sort) VALUES(?,?,?,?,?,?)')
+    .run(d.title||'', d.category_id||1, d.cover||'', d.location||'', d.shoot_date||'', s.s);
+  // 如果有图片URL数组
+  if (d.images && Array.isArray(d.images)) {
+    const ins = db.prepare('INSERT INTO portfolio_image(portfolio_id,image_url,sort) VALUES(?,?,?)');
+    d.images.forEach((url, i) => ins.run(r.lastInsertRowid, url, i));
+  }
+  res.json({ id: r.lastInsertRowid });
 });
+
 app.put('/api/admin/portfolios/:id', auth, (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE portfolio SET title=?,category_id=?,cover=?,location=?,shoot_date=?,sort=? WHERE id=?').run(d.title||'', d.category_id||1, d.cover||'', d.location||'', d.shoot_date||'', d.sort||0, req.params.id);
+  db.prepare('UPDATE portfolio SET title=?,category_id=?,cover=?,location=?,shoot_date=? WHERE id=?')
+    .run(d.title||'', d.category_id||1, d.cover||'', d.location||'', d.shoot_date||'', req.params.id);
+  // 更新图片
+  if (d.images && Array.isArray(d.images)) {
+    db.prepare('DELETE FROM portfolio_image WHERE portfolio_id=?').run(req.params.id);
+    const ins = db.prepare('INSERT INTO portfolio_image(portfolio_id,image_url,sort) VALUES(?,?,?)');
+    d.images.forEach((url, i) => ins.run(req.params.id, url, i));
+  }
   res.json({ success: true });
 });
-app.delete('/api/admin/portfolios/:id', auth, (req, res) => { db.prepare('DELETE FROM portfolio WHERE id=?').run(req.params.id); res.json({ success: true }); });
 
-// 作品图片
-app.post('/api/admin/portfolio-images', auth, (req, res) => {
-  const d = req.body;
-  const s = db.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM portfolio_image WHERE portfolio_id=?').get(d.portfolio_id);
-  res.json({ id: db.prepare('INSERT INTO portfolio_image(portfolio_id,image_url,sort) VALUES(?,?,?)').run(d.portfolio_id, d.image_url||'', s.s).lastInsertRowid });
+app.delete('/api/admin/portfolios/:id', auth, (req, res) => {
+  db.prepare('DELETE FROM portfolio_image WHERE portfolio_id=?').run(req.params.id);
+  db.prepare('DELETE FROM portfolio WHERE id=?').run(req.params.id);
+  res.json({ success: true });
 });
-app.delete('/api/admin/portfolio-images/:id', auth, (req, res) => { db.prepare('DELETE FROM portfolio_image WHERE id=?').run(req.params.id); res.json({ success: true }); });
 
 // 作品分类
 app.get('/api/admin/portfolio-categories', auth, (req, res) => res.json(db.prepare('SELECT * FROM portfolio_category ORDER BY sort ASC').all()));
@@ -238,30 +267,52 @@ app.post('/api/admin/portfolio-categories', auth, (req, res) => {
 });
 app.delete('/api/admin/portfolio-categories/:id', auth, (req, res) => { db.prepare('DELETE FROM portfolio_category WHERE id=?').run(req.params.id); res.json({ success: true }); });
 
-// 服装
+// ============================================================
+// 管理 API - 服装管理（完整 CRUD）
+// ============================================================
 app.get('/api/admin/costumes', auth, (req, res) => {
-  res.json({ categories: db.prepare('SELECT * FROM costume_category ORDER BY sort ASC').all(), costumes: db.prepare('SELECT * FROM costume ORDER BY sort ASC').all() });
+  res.json({
+    categories: db.prepare('SELECT * FROM costume_category ORDER BY sort ASC').all(),
+    costumes: db.prepare('SELECT c.*, cc.name as category_name FROM costume c LEFT JOIN costume_category cc ON c.category_id = cc.id ORDER BY c.sort DESC').all()
+  });
 });
+
+app.get('/api/admin/costumes/:id', auth, (req, res) => {
+  const c = db.prepare('SELECT c.*, cc.name as category_name FROM costume c LEFT JOIN costume_category cc ON c.category_id = cc.id WHERE c.id=?').get(req.params.id);
+  if (!c) return res.status(404).json({ error: '不存在' });
+  c.images = db.prepare('SELECT * FROM costume_image WHERE costume_id=? ORDER BY sort ASC').all(req.params.id);
+  res.json(c);
+});
+
 app.post('/api/admin/costumes', auth, (req, res) => {
   const d = req.body;
   const s = db.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM costume').get();
-  res.json({ id: db.prepare('INSERT INTO costume(name,category_id,cover,size,height_range,tags,notes,sort) VALUES(?,?,?,?,?,?,?,?)').run(d.name||'', d.category_id||1, d.cover||'', d.size||'', d.height_range||'', d.tags||'', d.notes||'', s.s).lastInsertRowid });
+  const r = db.prepare('INSERT INTO costume(name,category_id,cover,size,height_range,tags,notes,status,sort) VALUES(?,?,?,?,?,?,?,?,?)')
+    .run(d.name||'', d.category_id||1, d.cover||'', d.size||'', d.height_range||'', d.tags||'', d.notes||'', d.status??1, s.s);
+  if (d.images && Array.isArray(d.images)) {
+    const ins = db.prepare('INSERT INTO costume_image(costume_id,image_url,sort) VALUES(?,?,?)');
+    d.images.forEach((url, i) => ins.run(r.lastInsertRowid, url, i));
+  }
+  res.json({ id: r.lastInsertRowid });
 });
+
 app.put('/api/admin/costumes/:id', auth, (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE costume SET name=?,category_id=?,cover=?,size=?,height_range=?,tags=?,notes=?,status=?,sort=? WHERE id=?')
-    .run(d.name||'', d.category_id||1, d.cover||'', d.size||'', d.height_range||'', d.tags||'', d.notes||'', d.status??1, d.sort||0, req.params.id);
+  db.prepare('UPDATE costume SET name=?,category_id=?,cover=?,size=?,height_range=?,tags=?,notes=?,status=? WHERE id=?')
+    .run(d.name||'', d.category_id||1, d.cover||'', d.size||'', d.height_range||'', d.tags||'', d.notes||'', d.status??1, req.params.id);
+  if (d.images && Array.isArray(d.images)) {
+    db.prepare('DELETE FROM costume_image WHERE costume_id=?').run(req.params.id);
+    const ins = db.prepare('INSERT INTO costume_image(costume_id,image_url,sort) VALUES(?,?,?)');
+    d.images.forEach((url, i) => ins.run(req.params.id, url, i));
+  }
   res.json({ success: true });
 });
-app.delete('/api/admin/costumes/:id', auth, (req, res) => { db.prepare('DELETE FROM costume WHERE id=?').run(req.params.id); res.json({ success: true }); });
 
-// 服装图片
-app.post('/api/admin/costume-images', auth, (req, res) => {
-  const d = req.body;
-  const s = db.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM costume_image WHERE costume_id=?').get(d.costume_id);
-  res.json({ id: db.prepare('INSERT INTO costume_image(costume_id,image_url,sort) VALUES(?,?,?)').run(d.costume_id, d.image_url||'', s.s).lastInsertRowid });
+app.delete('/api/admin/costumes/:id', auth, (req, res) => {
+  db.prepare('DELETE FROM costume_image WHERE costume_id=?').run(req.params.id);
+  db.prepare('DELETE FROM costume WHERE id=?').run(req.params.id);
+  res.json({ success: true });
 });
-app.delete('/api/admin/costume-images/:id', auth, (req, res) => { db.prepare('DELETE FROM costume_image WHERE id=?').run(req.params.id); res.json({ success: true }); });
 
 // 服装分类
 app.get('/api/admin/costume-categories', auth, (req, res) => res.json(db.prepare('SELECT * FROM costume_category ORDER BY sort ASC').all()));
@@ -289,10 +340,18 @@ app.put('/api/admin/contact', auth, (req, res) => {
 });
 
 // ============================================================
-// SPA 路由：所有前端页面都走这里
+// SPA 路由
 // ============================================================
-const pages = ['/', '/portfolio', '/costume', '/about', '/admin', '/admin-login'];
+const pages = ['/', '/portfolio', '/costume', '/user', '/admin', '/admin-login'];
 app.get(pages, (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
+// 作品/服装详情也走 SPA
+app.get(/^\/(portfolio|costume)\/\d+$/, (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
+// 后台页面
+app.get(/^\/admin\/.+$/, (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 

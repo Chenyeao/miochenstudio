@@ -918,5 +918,15 @@ body {
 .modal-content { font-size: 13px; color: var(--text-secondary); margin-bottom: var(--spacing-md); }
 .modal-actions { display: flex; gap: var(--spacing-sm); justify-content: flex-end; }
 
+/* Modal 宽版 */
+.modal-box-wide { width: 340px; max-height: 80vh; display: flex; flex-direction: column; }
+.modal-body-scroll { overflow-y: auto; flex: 1; max-height: 60vh; padding-right: 4px; }
+
+/* 图片预览 */
+.img-preview-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.img-preview-item { position: relative; width: 64px; height: 64px; }
+.img-preview-thumb { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; background: var(--border-color); }
+.img-preview-del { position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; background: var(--color-error); color: #fff; font-size: 12px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
+
 /* 隐藏滚动条 */
 ::-webkit-scrollbar { display: none; }

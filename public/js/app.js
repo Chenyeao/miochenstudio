@@ -1,8 +1,10 @@
 // ============================================================
-// Aibo Studio - SPA App
+// Aibo Studio - SPA App (重构版)
+// 功能：首页 / 作品集 / 服装馆 / 用户系统 / 管理后台
 // ============================================================
 
 const ADMIN_TOKEN_KEY = 'admin_token';
+const USER_KEY = 'current_user';
 let _wechat = '';
 
 function showToast(msg) {
@@ -14,12 +16,8 @@ function showToast(msg) {
 }
 
 function onBook() {
-  if (_wechat) {
-    navigator.clipboard.writeText(_wechat).then(() => showToast('微信号已复制，请打开微信添加好友'))
-      .catch(() => showToast('微信号：' + _wechat));
-  } else {
-    showToast('请联系摄影师获取微信号');
-  }
+  if (_wechat) { navigator.clipboard.writeText(_wechat).then(() => showToast('微信号已复制')).catch(() => showToast('微信号：' + _wechat)); }
+  else { showToast('请联系摄影师获取微信号'); }
 }
 
 function copyText(text, msg) {
@@ -38,6 +36,9 @@ function route(path) {
 }
 window.addEventListener('popstate', () => render(location.pathname));
 
+// ============================================================
+// 路由入口
+// ============================================================
 function render(path) {
   const c = document.getElementById('pageContent');
   const tabs = document.getElementById('bottomTabs');
@@ -47,16 +48,18 @@ function render(path) {
   const brand = document.querySelector('.nav-brand');
 
   if (path.startsWith('/admin')) {
-    tabs.style.display = 'none';
-    book.style.display = 'none';
-    nav.style.display = 'none';
-    back.style.display = 'inline-flex';
+    tabs.style.display = 'none'; book.style.display = 'none';
+    nav.style.display = 'none'; back.style.display = 'inline-flex';
     brand.textContent = '管理后台';
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  } else if (path === '/user') {
+    tabs.style.display = 'flex'; book.style.display = 'flex';
+    nav.style.display = 'flex'; back.style.display = 'none';
+    brand.textContent = 'Aibo Studio';
+    document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.getAttribute('href') === '/user'));
   } else {
-    tabs.style.display = 'flex';
-    book.style.display = 'flex';
-    nav.style.display = 'flex';
-    back.style.display = 'none';
+    tabs.style.display = 'flex'; book.style.display = 'flex';
+    nav.style.display = 'flex'; back.style.display = 'none';
     brand.textContent = 'Aibo Studio';
     document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.getAttribute('href') === path));
   }
@@ -66,13 +69,16 @@ function render(path) {
   else if (path.startsWith('/portfolio/')) renderPortfolioDetail(c, path.split('/')[2]);
   else if (path === '/costume') renderCostume(c);
   else if (path.startsWith('/costume/')) renderCostumeDetail(c, path.split('/')[2]);
-  else if (path === '/about') renderAbout(c);
+  else if (path === '/user') renderUser(c);
   else if (path === '/admin-login') renderAdminLogin(c);
   else if (path === '/admin') renderAdmin(c);
   else if (path.startsWith('/admin/')) renderAdminPage(c, path);
   else renderHome(c);
 }
 
+// ============================================================
+// 首页
+// ============================================================
 async function renderHome(c) {
   c.innerHTML = '<div class="empty-state">加载中...</div>';
   try {
@@ -84,7 +90,6 @@ async function renderHome(c) {
     const featured = res.featured || [];
     const studioImages = res.studioImages || [];
     const reviews = res.reviews || [];
-
     let html = '';
 
     if (banners.length) {
@@ -139,11 +144,12 @@ async function renderHome(c) {
         dots.querySelectorAll('.banner-dot').forEach((d, i) => d.classList.toggle('active', i === idx));
       }, 4000);
     }
-  } catch (e) {
-    c.innerHTML = '<div class="empty-state">加载失败，请检查服务器</div>';
-  }
+  } catch (e) { c.innerHTML = '<div class="empty-state">加载失败，请检查服务器</div>'; }
 }
 
+// ============================================================
+// 作品集
+// ============================================================
 async function renderPortfolio(c) {
   c.innerHTML = '<div class="empty-state">加载中...</div>';
   try {
@@ -165,14 +171,11 @@ async function renderPortfolio(c) {
 async function switchPortfolioTab(catId, el) {
   document.querySelectorAll('.tab-item-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  const url = catId === 'all' ? '/api/portfolios' : '/api/portfolios?category_id=' + catId;
   try {
-    const res = await fetch(url).then(r => r.json());
+    const res = await fetch('/api/portfolios' + (catId!=='all'?'?category_id='+catId:'')).then(r => r.json());
     const grid = document.getElementById('portfolioGrid');
     let html = '';
-    (res.portfolios||[]).forEach(p => {
-      html += '<div class="card-grid-item" onclick="route(\'/portfolio/' + p.id + '\')">' + imgOrPlaceholder(p.cover, p.title, 'card-grid-cover') + '<div class="card-grid-info"><span class="card-grid-title">' + p.title + '</span></div></div>';
-    });
+    (res.portfolios||[]).forEach(p => { html += '<div class="card-grid-item" onclick="route(\'/portfolio/' + p.id + '\')">' + imgOrPlaceholder(p.cover, p.title, 'card-grid-cover') + '<div class="card-grid-info"><span class="card-grid-title">' + p.title + '</span></div></div>'; });
     grid.innerHTML = html || '<div class="empty-state">暂无作品</div>';
   } catch(e) {}
 }
@@ -182,15 +185,10 @@ async function renderPortfolioDetail(c, id) {
   try {
     const p = await fetch('/api/portfolios/' + id).then(r => r.json());
     let html = '';
-    if (p.images && p.images.length > 1) {
-      html += '<div class="detail-swiper">';
-      p.images.forEach(img => { html += imgOrPlaceholder(img.image_url, '', 'detail-swiper-img'); });
-      html += '</div>';
-    } else if (p.images && p.images.length === 1) {
-      html += imgOrPlaceholder(p.images[0].image_url, '', 'detail-img');
-    } else {
-      html += imgOrPlaceholder(p.cover, '', 'detail-img');
-    }
+    if (p.images && p.images.length) {
+      if (p.images.length > 1) { html += '<div class="detail-swiper">'; p.images.forEach(img => { html += imgOrPlaceholder(img.image_url, '', 'detail-swiper-img'); }); html += '</div>'; }
+      else { html += imgOrPlaceholder(p.images[0].image_url, '', 'detail-img'); }
+    } else { html += imgOrPlaceholder(p.cover, '', 'detail-img'); }
     html += '<div class="detail-body"><span class="detail-title">' + p.title + '</span><div class="detail-meta-card">' +
       (p.category_name ? '<div class="meta-row"><span class="meta-label">分类</span><span class="meta-value">' + p.category_name + '</span></div>' : '') +
       (p.shoot_date ? '<div class="meta-row"><span class="meta-label">拍摄时间</span><span class="meta-value">' + p.shoot_date + '</span></div>' : '') +
@@ -200,6 +198,9 @@ async function renderPortfolioDetail(c, id) {
   } catch(e) { c.innerHTML = '<div class="empty-state">作品不存在</div>'; }
 }
 
+// ============================================================
+// 服装馆
+// ============================================================
 async function renderCostume(c) {
   c.innerHTML = '<div class="empty-state">加载中...</div>';
   try {
@@ -222,9 +223,8 @@ async function renderCostume(c) {
 async function switchCostumeTab(catId, el) {
   document.querySelectorAll('.tab-item-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  const url = catId === 'all' ? '/api/costumes' : '/api/costumes?category_id=' + catId;
   try {
-    const res = await fetch(url).then(r => r.json());
+    const res = await fetch('/api/costumes' + (catId!=='all'?'?category_id='+catId:'')).then(r => r.json());
     const grid = document.getElementById('costumeGrid');
     let html = '';
     (res.costumes||[]).forEach(c => {
@@ -240,15 +240,10 @@ async function renderCostumeDetail(c, id) {
   try {
     const d = await fetch('/api/costumes/' + id).then(r => r.json());
     let html = '';
-    if (d.images && d.images.length > 1) {
-      html += '<div class="detail-swiper">';
-      d.images.forEach(img => { html += imgOrPlaceholder(img.image_url, '', 'detail-swiper-img'); });
-      html += '</div>';
-    } else if (d.images && d.images.length === 1) {
-      html += imgOrPlaceholder(d.images[0].image_url, '', 'detail-img');
-    } else {
-      html += imgOrPlaceholder(d.cover, '', 'detail-img');
-    }
+    if (d.images && d.images.length) {
+      if (d.images.length > 1) { html += '<div class="detail-swiper">'; d.images.forEach(img => { html += imgOrPlaceholder(img.image_url, '', 'detail-swiper-img'); }); html += '</div>'; }
+      else { html += imgOrPlaceholder(d.images[0].image_url, '', 'detail-img'); }
+    } else { html += imgOrPlaceholder(d.cover, '', 'detail-img'); }
     html += '<div class="detail-body"><span class="detail-title">' + d.name + '</span><div class="detail-meta-card">' +
       (d.category_name ? '<div class="meta-row"><span class="meta-label">分类</span><span class="meta-value">' + d.category_name + '</span></div>' : '') +
       (d.size ? '<div class="meta-row"><span class="meta-label">尺码</span><span class="meta-value">' + d.size + '</span></div>' : '') +
@@ -261,40 +256,104 @@ async function renderCostumeDetail(c, id) {
   } catch(e) { c.innerHTML = '<div class="empty-state">服装不存在</div>'; }
 }
 
-async function renderAbout(c) {
-  c.innerHTML = '<div class="empty-state">加载中...</div>';
-  try {
-    const res = await fetch('/api/about').then(r => r.json());
-    const p = res.photographer || {};
-    const studioImages = res.studioImages || [];
-    const steps = ['咨询', '档期确认', '选服装', '拍摄', '选片', '交付'];
-    let html = '<div class="hero-section">' + imgOrPlaceholder(p.avatar, '', 'hero-avatar') +
-      '<span class="hero-name">' + (p.name||'摄影师') + '</span><div class="hero-desc">' + (p.intro||'').replace(/\n/g,'<br>') + '</div></div>';
-    if (p.studio_intro) html += '<div class="section"><div class="section-title">工作室介绍</div><p style="font-size:13px;color:var(--text-secondary);line-height:1.8">' + p.studio_intro.replace(/\n/g,'<br>') + '</p></div>';
-    if (studioImages.length) {
-      html += '<div class="section"><div class="section-title">环境展示</div>';
-      studioImages.forEach(si => { html += imgOrPlaceholder(si.image_url, si.caption, 'studio-grid-img'); });
-      html += '</div>';
-    }
-    html += '<div class="section"><div class="section-title">服务流程</div>';
-    steps.forEach((s, i) => { html += '<div class="process-step"><div class="process-num">' + (i+1) + '</div><span class="process-text">' + s + '</span></div>'; });
-    html += '</div><div class="section"><div class="section-title">联系方式</div><div class="contact-card">';
-    if (p.wechat) html += '<div class="contact-row"><span class="contact-label">微信号</span><span class="contact-value">' + p.wechat + '</span><button class="contact-copy" onclick="copyText(\'' + p.wechat + '\',\'微信号已复制\')">复制</button></div>';
-    if (p.wechat_qrcode) html += imgOrPlaceholder(p.wechat_qrcode, '二维码', 'qrcode-img');
-    if (p.phone) html += '<div class="contact-row"><span class="contact-label">电话</span><span class="contact-value">' + p.phone + '</span></div>';
-    if (p.xiaohongshu || p.weibo) {
-      html += '<div class="contact-social">';
-      if (p.xiaohongshu) html += '<button class="contact-link" onclick="copyText(\'' + p.xiaohongshu + '\',\'小红书链接已复制\')">小红书 ›</button>';
-      if (p.weibo) html += '<button class="contact-link" onclick="copyText(\'' + p.weibo + '\',\'微博链接已复制\')">微博 ›</button>';
-      html += '</div>';
-    }
-    html += '</div></div>';
-    c.innerHTML = html;
-  } catch(e) { c.innerHTML = '<div class="empty-state">加载失败</div>'; }
+// ============================================================
+// 用户页面（替代原来的"关于"）
+// ============================================================
+function getCurrentUser() {
+  try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch(e) { return null; }
 }
 
+function renderUser(c) {
+  const user = getCurrentUser();
+  if (user) {
+    renderUserProfile(c, user);
+  } else {
+    renderUserLogin(c);
+  }
+}
+
+function renderUserLogin(c) {
+  c.innerHTML = '<div class="hero-section"><div style="padding:32px 16px;text-align:center"><span style="font-size:48px">📸</span><span class="hero-name" style="margin-top:12px">我的</span><div class="hero-desc">登录或注册账号，管理个人信息</div></div>' +
+    '<div style="padding:0 24px"><div class="form-group"><label class="form-label">用户名</label><input class="form-input" id="ul_username" placeholder="设置你的用户名" /></div>' +
+    '<div class="form-group"><label class="form-label">密码</label><input class="form-input" type="password" id="ul_password" placeholder="设置密码" /></div>' +
+    '<div style="display:flex;gap:12px;margin-top:24px"><button class="btn btn-secondary" style="flex:1" onclick="userLogin()">登录</button><button class="btn btn-primary" style="flex:1" onclick="userRegister()">注册</button></div>' +
+    '<p style="text-align:center;font-size:12px;color:var(--text-tertiary);margin-top:24px">注册后可管理个人资料，便于后续服务</p></div></div>';
+}
+
+async function userLogin() {
+  const username = document.getElementById('ul_username').value.trim();
+  const password = document.getElementById('ul_password').value.trim();
+  if (!username || !password) return showToast('请填写用户名和密码');
+  try {
+    const res = await fetch('/api/user/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password}) }).then(r => r.json());
+    if (res.success) {
+      localStorage.setItem(USER_KEY, JSON.stringify(res.user));
+      showToast('登录成功');
+      route('/user');
+    } else { showToast(res.error||'登录失败'); }
+  } catch(e) { showToast('网络错误'); }
+}
+
+async function userRegister() {
+  const username = document.getElementById('ul_username').value.trim();
+  const password = document.getElementById('ul_password').value.trim();
+  if (!username || !password) return showToast('请填写用户名和密码');
+  if (password.length < 3) return showToast('密码至少3位');
+  try {
+    const res = await fetch('/api/user/register', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password,nickname:username}) }).then(r => r.json());
+    if (res.success) {
+      showToast('注册成功，请登录');
+      // 自动登录
+      const loginRes = await fetch('/api/user/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password}) }).then(r => r.json());
+      if (loginRes.success) { localStorage.setItem(USER_KEY, JSON.stringify(loginRes.user)); route('/user'); }
+    } else { showToast(res.error||'注册失败'); }
+  } catch(e) { showToast('网络错误'); }
+}
+
+function renderUserProfile(c, user) {
+  c.innerHTML = '<div class="hero-section"><div style="padding:32px 16px;text-align:center">' +
+    imgOrPlaceholder(user.avatar, user.nickname, 'hero-avatar') +
+    '<span class="hero-name">' + user.nickname + '</span><span class="hero-desc">用户 ID: ' + user.id + '</span></div>' +
+    '<div style="padding:0 16px 24px"><div class="section" style="padding:0;margin:0"><div class="contact-card">' +
+    '<div class="form-group"><label class="form-label">昵称</label><input class="form-input" id="up_nickname" value="' + htmlEscape(user.nickname||'') + '" /></div>' +
+    '<div class="form-group"><label class="form-label">年龄</label><input class="form-input" id="up_age" type="number" value="' + (user.age||'') + '" /></div>' +
+    '<div class="form-group"><label class="form-label">性别</label><select class="form-input" id="up_gender"><option value="" ' + (!user.gender?'selected':'') + '>未设置</option><option value="男" ' + (user.gender==='男'?'selected':'') + '>男</option><option value="女" ' + (user.gender==='女'?'selected':'') + '>女</option></select></div>' +
+    '<div class="form-group"><label class="form-label">手机号</label><input class="form-input" id="up_phone" value="' + htmlEscape(user.phone||'') + '" /></div>' +
+    '<div class="form-group"><label class="form-label">头像 URL</label><input class="form-input" id="up_avatar" value="' + htmlEscape(user.avatar||'') + '" /></div>' +
+    '<div style="display:flex;gap:12px;margin-top:16px"><button class="btn btn-primary" style="flex:1" onclick="saveUserProfile()">保存资料</button><button class="btn btn-danger" style="flex:1" onclick="userLogout()">退出登录</button></div>' +
+    '</div></div></div></div>';
+}
+
+async function saveUserProfile() {
+  const user = getCurrentUser();
+  if (!user) return;
+  const data = {
+    id: user.id,
+    nickname: document.getElementById('up_nickname').value,
+    age: parseInt(document.getElementById('up_age').value) || 0,
+    gender: document.getElementById('up_gender').value,
+    phone: document.getElementById('up_phone').value,
+    avatar: document.getElementById('up_avatar').value
+  };
+  try {
+    await fetch('/api/user/profile', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }).then(r => r.json());
+    Object.assign(user, data);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    showToast('保存成功');
+  } catch(e) { showToast('保存失败'); }
+}
+
+function userLogout() {
+  localStorage.removeItem(USER_KEY);
+  showToast('已退出');
+  route('/user');
+}
+
+// ============================================================
+// 管理后台
+// ============================================================
 function renderAdminLogin(c) {
-  c.innerHTML = '<div class="admin-login-box"><h2>管理员登录</h2><p>请输入管理密码以管理内容</p><input class="admin-login-input" type="password" id="adminPwd" placeholder="输入密码" onkeydown="if(event.key===\'Enter\') adminLogin()" /><button class="btn btn-primary" onclick="adminLogin()">登录</button></div>';
+  c.innerHTML = '<div class="admin-login-box"><h2>管理员登录</h2><p>请输入管理密码</p><input class="admin-login-input" type="password" id="adminPwd" placeholder="输入密码" onkeydown="if(event.key===\'Enter\') adminLogin()" /><button class="btn btn-primary" onclick="adminLogin()">登录</button></div>';
 }
 
 async function adminLogin() {
@@ -323,13 +382,15 @@ function adminFetch(url, opts) {
   });
 }
 
+function htmlEscape(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 function renderAdmin(c) {
   var token = getToken();
   if (!token) { renderAdminLogin(c); return; }
   c.innerHTML = '<div class="admin-page"><div class="admin-header"><span class="admin-title">管理后台</span><button class="btn btn-text" onclick="localStorage.removeItem(\'' + ADMIN_TOKEN_KEY + '\');route(\'/admin-login\')">退出</button></div><div class="admin-menu">' +
     '<a class="admin-menu-item" onclick="return route(\'/admin/home\')"><div class="admin-menu-icon" style="background:#F5EDDC">🏠</div><div><span class="admin-menu-label">首页管理</span><span class="admin-menu-desc">Banner、简介、服务项目</span></div></a>' +
-    '<a class="admin-menu-item" onclick="return route(\'/admin/portfolio\')"><div class="admin-menu-icon" style="background:#F0E6D0">🖼️</div><div><span class="admin-menu-label">作品管理</span><span class="admin-menu-desc">上传、编辑、分类</span></div></a>' +
-    '<a class="admin-menu-item" onclick="return route(\'/admin/costume\')"><div class="admin-menu-icon" style="background:#EDE0C8">👗</div><div><span class="admin-menu-label">服装管理</span><span class="admin-menu-desc">服装库、上下架</span></div></a>' +
+    '<a class="admin-menu-item" onclick="return route(\'/admin/portfolio\')"><div class="admin-menu-icon" style="background:#F0E6D0">🖼️</div><div><span class="admin-menu-label">作品管理</span><span class="admin-menu-desc">上传、编辑、分类标签</span></div></a>' +
+    '<a class="admin-menu-item" onclick="return route(\'/admin/costume\')"><div class="admin-menu-icon" style="background:#EDE0C8">👗</div><div><span class="admin-menu-label">服装管理</span><span class="admin-menu-desc">服装库、分类、上下架</span></div></a>' +
     '<a class="admin-menu-item" onclick="return route(\'/admin/contact\')"><div class="admin-menu-icon" style="background:#F5EDDC">📞</div><div><span class="admin-menu-label">联系方式</span><span class="admin-menu-desc">微信、电话、社交链接</span></div></a>' +
     '</div></div>';
 }
@@ -343,8 +404,9 @@ function renderAdminPage(c, path) {
   else if (path === '/admin/contact') renderAdminContact(c);
 }
 
-function htmlEscape(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
+// ============================================================
+// 后台 - 首页管理
+// ============================================================
 async function renderAdminHome(c) {
   c.innerHTML = '<div class="empty-state">加载中...</div>';
   try {
@@ -358,18 +420,18 @@ async function renderAdminHome(c) {
       '<div class="form-group"><label class="form-label">工作室介绍</label><textarea class="form-textarea" id="ph_studio">' + htmlEscape(p.studio_intro||'') + '</textarea></div>' +
       '<button class="btn btn-primary" onclick="savePhotographer()">保存信息</button></div>';
 
-    html += '<div class="admin-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="admin-section-title" style="margin-bottom:0;border:none;padding:0">Banner 管理</span><button class="add-btn" onclick="showAddBannerDialog()">+ 新增</button></div><div id="bannerList">';
+    html += '<div class="admin-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="admin-section-title" style="margin-bottom:0;border:none;padding:0">Banner 管理</span><button class="add-btn" onclick="showPromptModal(\'新增 Banner\',\'标题\',\'图片URL(可选)\',function(t,i){adminFetch(\'/api/admin/banners\',{method:\'POST\',body:JSON.stringify({title:t,image_url:i||\'\',subtitle:\'\'})}).then(function(){renderAdminHome(document.getElementById(\'pageContent\'))}).catch(function(){})})">+ 新增</button></div><div id="bannerList">';
     (res.banners||[]).forEach(function(b) {
-      html += '<div class="list-item-admin"><div style="width:50px;height:50px;border-radius:4px;background:#eee;flex-shrink:0;overflow:hidden">' + imgOrPlaceholder(b.image_url,'','list-thumb') + '</div><div class="list-info"><span class="list-title">' + htmlEscape(b.title) + '</span><span class="list-desc">' + htmlEscape(b.subtitle) + '</span></div><button class="list-del-btn" onclick="deleteBanner(' + b.id + ')">删除</button></div>';
+      html += '<div class="list-item-admin"><div style="width:50px;height:50px;border-radius:4px;background:#eee;flex-shrink:0;overflow:hidden">' + imgOrPlaceholder(b.image_url,'','list-thumb') + '</div><div class="list-info"><span class="list-title">' + htmlEscape(b.title) + '</span><span class="list-desc">' + htmlEscape(b.subtitle) + '</span></div><button class="list-del-btn" onclick="confirmDelete(\'确认删除\',function(){adminFetch(\'/api/admin/banners/' + b.id + '\',{method:\'DELETE\'}).then(function(){renderAdminHome(document.getElementById(\'pageContent\'))})})">删除</button></div>';
     });
     html += '</div></div>';
 
-    html += '<div class="admin-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="admin-section-title" style="margin-bottom:0;border:none;padding:0">服务项目</span><button class="add-btn" onclick="showAddServiceDialog()">+ 新增</button></div><div id="serviceList">';
-    (res.services||[]).forEach(function(s) { html += '<div class="list-item-admin"><div class="list-info"><span class="list-title">' + (s.icon||'') + ' ' + htmlEscape(s.name) + '</span></div><button class="list-del-btn" onclick="deleteService(' + s.id + ')">删除</button></div>'; });
+    html += '<div class="admin-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="admin-section-title" style="margin-bottom:0;border:none;padding:0">服务项目</span><button class="add-btn" onclick="showPromptModal(\'新增服务\',\'服务名称\',null,function(n){if(n)adminFetch(\'/api/admin/services\',{method:\'POST\',body:JSON.stringify({name:n,icon:\'\'})}).then(function(){renderAdminHome(document.getElementById(\'pageContent\'))}).catch(function(){})})">+ 新增</button></div><div id="serviceList">';
+    (res.services||[]).forEach(function(s) { html += '<div class="list-item-admin"><div class="list-info"><span class="list-title">' + (s.icon||'') + ' ' + htmlEscape(s.name) + '</span></div><button class="list-del-btn" onclick="confirmDelete(\'确认删除\',function(){adminFetch(\'/api/admin/services/' + s.id + '\',{method:\'DELETE\'}).then(function(){renderAdminHome(document.getElementById(\'pageContent\'))})})">删除</button></div>'; });
     html += '</div></div>';
 
-    html += '<div class="admin-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="admin-section-title" style="margin-bottom:0;border:none;padding:0">客户评价</span><button class="add-btn" onclick="showAddReviewDialog()">+ 新增</button></div><div id="reviewList">';
-    (res.reviews||[]).forEach(function(r) { html += '<div class="list-item-admin"><div class="list-info"><span class="list-title">' + htmlEscape(r.nickname) + '</span><span class="list-desc">' + htmlEscape(r.content) + '</span></div><button class="list-del-btn" onclick="deleteReview(' + r.id + ')">删除</button></div>'; });
+    html += '<div class="admin-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="admin-section-title" style="margin-bottom:0;border:none;padding:0">客户评价</span><button class="add-btn" onclick="showPromptModal(\'新增评价\',\'评价内容\',\'客户昵称\',function(c,n){if(c)adminFetch(\'/api/admin/reviews\',{method:\'POST\',body:JSON.stringify({nickname:n||\'客户\',content:c})}).then(function(){renderAdminHome(document.getElementById(\'pageContent\'))}).catch(function(){})})">+ 新增</button></div><div id="reviewList">';
+    (res.reviews||[]).forEach(function(r) { html += '<div class="list-item-admin"><div class="list-info"><span class="list-title">' + htmlEscape(r.nickname) + '</span><span class="list-desc">' + htmlEscape(r.content) + '</span></div><button class="list-del-btn" onclick="confirmDelete(\'确认删除\',function(){adminFetch(\'/api/admin/reviews/' + r.id + '\',{method:\'DELETE\'}).then(function(){renderAdminHome(document.getElementById(\'pageContent\'))})})">删除</button></div>'; });
     html += '</div></div></div>';
 
     c.innerHTML = html;
@@ -387,49 +449,180 @@ async function savePhotographer() {
   showToast('保存成功');
 }
 
-async function deleteBanner(id) { if (!confirm('确认删除？')) return; await adminFetch('/api/admin/banners/' + id,{method:'DELETE'}); render(document.getElementById('pageContent'),location.pathname); }
-function showAddBannerDialog() {
-  var title = prompt('Banner 标题', '新 Banner'); if (title === null) return;
-  var img = prompt('图片 URL（可选）','');
-  adminFetch('/api/admin/banners',{method:'POST',body:JSON.stringify({title:title||'',image_url:img||'',subtitle:''})}).then(function(){render(document.getElementById('pageContent'),location.pathname);}).catch(function(){});
-}
-async function deleteService(id) { if (!confirm('确认删除？')) return; await adminFetch('/api/admin/services/' + id,{method:'DELETE'}); render(document.getElementById('pageContent'),location.pathname); }
-function showAddServiceDialog() { var n = prompt('服务名称','新服务'); if (n) adminFetch('/api/admin/services',{method:'POST',body:JSON.stringify({name:n,icon:''})}).then(function(){render(document.getElementById('pageContent'),location.pathname);}).catch(function(){}); }
-async function deleteReview(id) { if (!confirm('确认删除？')) return; await adminFetch('/api/admin/reviews/' + id,{method:'DELETE'}); render(document.getElementById('pageContent'),location.pathname); }
-function showAddReviewDialog() { var c = prompt('评价内容',''); if (c) adminFetch('/api/admin/reviews',{method:'POST',body:JSON.stringify({nickname:'客户',content:c})}).then(function(){render(document.getElementById('pageContent'),location.pathname);}).catch(function(){}); }
-
+// ============================================================
+// 后台 - 作品管理（完整编辑弹窗）
+// ============================================================
 async function renderAdminPortfolio(c) {
   c.innerHTML = '<div class="empty-state">加载中...</div>';
   try {
     var res = await adminFetch('/api/admin/portfolios');
-    var html = '<div class="admin-page"><div class="admin-header"><span class="admin-title">作品管理</span><button class="add-btn" onclick="addPortfolio()">+ 新增</button></div>';
+    var html = '<div class="admin-page"><div class="admin-header"><span class="admin-title">作品管理</span><button class="add-btn" onclick="showPortfolioEditModal(null)">+ 新增</button></div>';
     (res.portfolios||[]).forEach(function(p) {
-      html += '<div class="list-item-admin">' + imgOrPlaceholder(p.cover, p.title, 'list-thumb') + '<div class="list-info"><span class="list-title">' + htmlEscape(p.title) + '</span><span class="list-desc">' + (p.shoot_date||'') + '</span></div><button class="list-del-btn" onclick="deletePortfolio(' + p.id + ')">删除</button></div>';
+      html += '<div class="list-item-admin">' + imgOrPlaceholder(p.cover, p.title, 'list-thumb') + '<div class="list-info"><span class="list-title">' + htmlEscape(p.title) + ' <span style="font-size:11px;color:var(--text-tertiary)">[' + htmlEscape(p.category_name) + ']</span></span><span class="list-desc">' + (p.shoot_date||'') + '</span></div><button class="btn btn-text" onclick="showPortfolioEditModal(' + p.id + ')">编辑</button><button class="list-del-btn" onclick="confirmDelete(\'确认删除？\',function(){adminFetch(\'/api/admin/portfolios/' + p.id + '\',{method:\'DELETE\'}).then(function(){renderAdminPortfolio(document.getElementById(\'pageContent\'))}).catch(function(){})})">删除</button></div>';
     });
     html += '</div>';
+    if ((res.categories||[]).length) {
+      html += '<div class="admin-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="admin-section-title" style="border:none;padding:0">作品分类</span><button class="add-btn" onclick="showPromptModal(\'新增分类\',\'分类名称\',null,function(n){if(n)adminFetch(\'/api/admin/portfolio-categories\',{method:\'POST\',body:JSON.stringify({name:n})}).then(function(){renderAdminPortfolio(document.getElementById(\'pageContent\'))}).catch(function(){})})">+ 新增</button></div>';
+      res.categories.forEach(function(cat) {
+        html += '<div class="list-item-admin"><div class="list-info"><span class="list-title">' + htmlEscape(cat.name) + '</span></div><button class="list-del-btn" onclick="confirmDelete(\'确认删除分类\',function(){adminFetch(\'/api/admin/portfolio-categories/' + cat.id + '\',{method:\'DELETE\'}).then(function(){renderAdminPortfolio(document.getElementById(\'pageContent\'))}).catch(function(){})})">删除</button></div>';
+      });
+      html += '</div>';
+    }
     c.innerHTML = html;
   } catch(e) { c.innerHTML = '<div class="empty-state">加载失败</div>'; }
 }
 
-async function addPortfolio() { var title = prompt('作品标题','新作品'); if (!title) return; await adminFetch('/api/admin/portfolios',{method:'POST',body:JSON.stringify({title:title,category_id:1})}); render(document.getElementById('pageContent'),location.pathname); }
-async function deletePortfolio(id) { if (!confirm('确认删除？')) return; await adminFetch('/api/admin/portfolios/' + id,{method:'DELETE'}); render(document.getElementById('pageContent'),location.pathname); }
+// 弹出作品编辑/新增弹窗
+async function showPortfolioEditModal(id) {
+  var user = getCurrentUser();
+  var isNew = !id;
+  var data = {};
+  var categories = [];
+  try {
+    var baseRes = await adminFetch('/api/admin/portfolios');
+    categories = baseRes.categories || [];
+    if (!isNew) {
+      data = await adminFetch('/api/admin/portfolios/' + id);
+    }
+  } catch(e) { return; }
 
+  var mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.id = 'portfolioModal';
+
+  var catOptions = '<option value="">选择分类</option>';
+  categories.forEach(function(c) { catOptions += '<option value="' + c.id + '"' + (data.category_id==c.id?' selected':'') + '>' + htmlEscape(c.name) + '</option>'; });
+
+  var imagesHtml = '';
+  if (data.images) {
+    data.images.forEach(function(img, i) {
+      imagesHtml += '<div class="img-preview-item" data-url="' + htmlEscape(img.image_url) + '">' + imgOrPlaceholder(img.image_url, '', 'img-preview-thumb') + '<button class="img-preview-del" onclick="this.parentElement.remove()">×</button></div>';
+    });
+  }
+
+  mask.innerHTML = '<div class="modal-box modal-box-wide"><span class="modal-title">' + (isNew ? '新增' : '编辑') + '作品</span><div class="modal-body-scroll">' +
+    '<div class="form-group"><label class="form-label">作品标题</label><input class="form-input" id="pf_title" value="' + htmlEscape(data.title||'') + '" /></div>' +
+    '<div class="form-group"><label class="form-label">分类</label><select class="form-input" id="pf_category">' + catOptions + '</select></div>' +
+    '<div class="form-group"><label class="form-label">封面图URL</label><input class="form-input" id="pf_cover" value="' + htmlEscape(data.cover||'') + '" placeholder="输入图片URL" /></div>' +
+    '<div class="form-group"><label class="form-label">拍摄地点</label><input class="form-input" id="pf_location" value="' + htmlEscape(data.location||'') + '" /></div>' +
+    '<div class="form-group"><label class="form-label">拍摄日期</label><input class="form-input" id="pf_date" value="' + htmlEscape(data.shoot_date||'') + '" placeholder="如 2025-03" /></div>' +
+    '<div class="form-group"><label class="form-label">作品图片 (URL，每行一个)</label><textarea class="form-textarea" id="pf_images" placeholder="每行一个图片URL">' + ((data.images||[]).map(function(i){return i.image_url}).join('\n')) + '</textarea></div>' +
+    '<div class="img-preview-list" id="pf_preview">' + imagesHtml + '</div>' +
+    '</div><div class="modal-actions"><button class="btn btn-secondary" onclick="document.getElementById(\'portfolioModal\').remove()">取消</button><button class="btn btn-primary" onclick="savePortfolio(' + (id||'null') + ')">保存</button></div></div>';
+  document.body.appendChild(mask);
+}
+
+async function savePortfolio(id) {
+  var data = {
+    title: document.getElementById('pf_title').value,
+    category_id: parseInt(document.getElementById('pf_category').value) || 1,
+    cover: document.getElementById('pf_cover').value,
+    location: document.getElementById('pf_location').value,
+    shoot_date: document.getElementById('pf_date').value,
+    images: document.getElementById('pf_images').value.split('\n').filter(Boolean)
+  };
+  // 自动设封面
+  if (!data.cover && data.images.length) data.cover = data.images[0];
+
+  try {
+    if (id) {
+      await adminFetch('/api/admin/portfolios/' + id, { method:'PUT', body:JSON.stringify(data) });
+    } else {
+      await adminFetch('/api/admin/portfolios', { method:'POST', body:JSON.stringify(data) });
+    }
+    document.getElementById('portfolioModal').remove();
+    showToast('保存成功');
+    renderAdminPortfolio(document.getElementById('pageContent'));
+  } catch(e) { showToast('保存失败'); }
+}
+
+// ============================================================
+// 后台 - 服装管理（完整编辑弹窗）
+// ============================================================
 async function renderAdminCostume(c) {
   c.innerHTML = '<div class="empty-state">加载中...</div>';
   try {
     var res = await adminFetch('/api/admin/costumes');
-    var html = '<div class="admin-page"><div class="admin-header"><span class="admin-title">服装管理</span><button class="add-btn" onclick="addCostume()">+ 新增</button></div>';
+    var html = '<div class="admin-page"><div class="admin-header"><span class="admin-title">服装管理</span><button class="add-btn" onclick="showCostumeEditModal(null)">+ 新增</button></div>';
     (res.costumes||[]).forEach(function(co) {
-      html += '<div class="list-item-admin">' + imgOrPlaceholder(co.cover, co.name, 'list-thumb') + '<div class="list-info"><span class="list-title">' + htmlEscape(co.name) + '</span><span class="list-desc">' + (co.status?'已上架':'已下架') + '</span></div><button class="list-del-btn" onclick="deleteCostume(' + co.id + ')">删除</button></div>';
+      var statusText = co.status ? '已上架' : '已下架';
+      html += '<div class="list-item-admin">' + imgOrPlaceholder(co.cover, co.name, 'list-thumb') + '<div class="list-info"><span class="list-title">' + htmlEscape(co.name) + ' <span style="font-size:11px;color:var(--text-tertiary)">[' + htmlEscape(co.category_name) + ']</span></span><span class="list-desc">' + statusText + '</span></div><button class="btn btn-text" onclick="showCostumeEditModal(' + co.id + ')">编辑</button><button class="list-del-btn" onclick="confirmDelete(\'确认删除？\',function(){adminFetch(\'/api/admin/costumes/' + co.id + '\',{method:\'DELETE\'}).then(function(){renderAdminCostume(document.getElementById(\'pageContent\'))}).catch(function(){})})">删除</button></div>';
     });
     html += '</div>';
+    if ((res.categories||[]).length) {
+      html += '<div class="admin-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="admin-section-title" style="border:none;padding:0">服装分类</span><button class="add-btn" onclick="showPromptModal(\'新增分类\',\'分类名称\',null,function(n){if(n)adminFetch(\'/api/admin/costume-categories\',{method:\'POST\',body:JSON.stringify({name:n})}).then(function(){renderAdminCostume(document.getElementById(\'pageContent\'))}).catch(function(){})})">+ 新增</button></div>';
+      res.categories.forEach(function(cat) {
+        html += '<div class="list-item-admin"><div class="list-info"><span class="list-title">' + htmlEscape(cat.name) + '</span></div><button class="list-del-btn" onclick="confirmDelete(\'确认删除分类\',function(){adminFetch(\'/api/admin/costume-categories/' + cat.id + '\',{method:\'DELETE\'}).then(function(){renderAdminCostume(document.getElementById(\'pageContent\'))}).catch(function(){})})">删除</button></div>';
+      });
+      html += '</div>';
+    }
     c.innerHTML = html;
   } catch(e) { c.innerHTML = '<div class="empty-state">加载失败</div>'; }
 }
 
-async function addCostume() { var name = prompt('服装名称','新服装'); if (!name) return; await adminFetch('/api/admin/costumes',{method:'POST',body:JSON.stringify({name:name,category_id:1})}); render(document.getElementById('pageContent'),location.pathname); }
-async function deleteCostume(id) { if (!confirm('确认删除？')) return; await adminFetch('/api/admin/costumes/' + id,{method:'DELETE'}); render(document.getElementById('pageContent'),location.pathname); }
+async function showCostumeEditModal(id) {
+  var isNew = !id;
+  var data = {};
+  var categories = [];
+  try {
+    var baseRes = await adminFetch('/api/admin/costumes');
+    categories = baseRes.categories || [];
+    if (!isNew) {
+      data = await adminFetch('/api/admin/costumes/' + id);
+    }
+  } catch(e) { return; }
 
+  var mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.id = 'costumeModal';
+
+  var catOptions = '<option value="">选择分类</option>';
+  categories.forEach(function(c) { catOptions += '<option value="' + c.id + '"' + (data.category_id==c.id?' selected':'') + '>' + htmlEscape(c.name) + '</option>'; });
+
+  mask.innerHTML = '<div class="modal-box modal-box-wide"><span class="modal-title">' + (isNew ? '新增' : '编辑') + '服装</span><div class="modal-body-scroll">' +
+    '<div class="form-group"><label class="form-label">服装名称</label><input class="form-input" id="cs_name" value="' + htmlEscape(data.name||'') + '" /></div>' +
+    '<div class="form-group"><label class="form-label">分类</label><select class="form-input" id="cs_category">' + catOptions + '</select></div>' +
+    '<div class="form-group"><label class="form-label">封面图URL</label><input class="form-input" id="cs_cover" value="' + htmlEscape(data.cover||'') + '" /></div>' +
+    '<div class="form-group"><label class="form-label">尺码</label><input class="form-input" id="cs_size" value="' + htmlEscape(data.size||'') + '" placeholder="如 M/L" /></div>' +
+    '<div class="form-group"><label class="form-label">适合身高</label><input class="form-input" id="cs_height" value="' + htmlEscape(data.height_range||'') + '" placeholder="如 160-170cm" /></div>' +
+    '<div class="form-group"><label class="form-label">标签 (逗号分隔)</label><input class="form-input" id="cs_tags" value="' + htmlEscape(data.tags||'') + '" placeholder="如 红色,明制,大袖衫" /></div>' +
+    '<div class="form-group"><label class="form-label">备注</label><textarea class="form-textarea" id="cs_notes">' + htmlEscape(data.notes||'') + '</textarea></div>' +
+    '<div class="form-group"><label class="form-label">状态</label><select class="form-input" id="cs_status"><option value="1"' + (data.status!=0?' selected':'') + '>上架</option><option value="0"' + (data.status===0?' selected':'') + '>下架</option></select></div>' +
+    '<div class="form-group"><label class="form-label">服装图片 (URL，每行一个)</label><textarea class="form-textarea" id="cs_images" placeholder="每行一个图片URL">' + ((data.images||[]).map(function(i){return i.image_url}).join('\n')) + '</textarea></div>' +
+    '</div><div class="modal-actions"><button class="btn btn-secondary" onclick="document.getElementById(\'costumeModal\').remove()">取消</button><button class="btn btn-primary" onclick="saveCostume(' + (id||'null') + ')">保存</button></div></div>';
+  document.body.appendChild(mask);
+}
+
+async function saveCostume(id) {
+  var data = {
+    name: document.getElementById('cs_name').value,
+    category_id: parseInt(document.getElementById('cs_category').value) || 1,
+    cover: document.getElementById('cs_cover').value,
+    size: document.getElementById('cs_size').value,
+    height_range: document.getElementById('cs_height').value,
+    tags: document.getElementById('cs_tags').value,
+    notes: document.getElementById('cs_notes').value,
+    status: parseInt(document.getElementById('cs_status').value) || 1,
+    images: document.getElementById('cs_images').value.split('\n').filter(Boolean)
+  };
+  if (!data.name) { showToast('请填写服装名称'); return; }
+  if (!data.cover && data.images.length) data.cover = data.images[0];
+
+  try {
+    if (id) {
+      await adminFetch('/api/admin/costumes/' + id, { method:'PUT', body:JSON.stringify(data) });
+    } else {
+      await adminFetch('/api/admin/costumes', { method:'POST', body:JSON.stringify(data) });
+    }
+    document.getElementById('costumeModal').remove();
+    showToast('保存成功');
+    renderAdminCostume(document.getElementById('pageContent'));
+  } catch(e) { showToast('保存失败'); }
+}
+
+// ============================================================
+// 后台 - 联系方式
+// ============================================================
 async function renderAdminContact(c) {
   c.innerHTML = '<div class="empty-state">加载中...</div>';
   try {
@@ -453,4 +646,28 @@ async function saveContact() {
     weibo: document.getElementById('ct_weibo').value
   })});
   showToast('保存成功');
+}
+
+// ============================================================
+// 工具：确认删除弹窗 / 表单输入弹窗
+// ============================================================
+function confirmDelete(msg, cb) {
+  var mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.innerHTML = '<div class="modal-box"><span class="modal-title">' + msg + '</span><div class="modal-actions" style="margin-top:16px"><button class="btn btn-secondary" onclick="this.closest(\'.modal-mask\').remove()">取消</button><button class="btn btn-danger" onclick="this.closest(\'.modal-mask\').remove();(function(){' + cb.toString() + '})()">确认</button></div></div>';
+  document.body.appendChild(mask);
+  return false;
+}
+
+function showPromptModal(title, placeholder1, placeholder2, cb) {
+  var mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.id = 'promptModal';
+  var html = '<div class="modal-box"><span class="modal-title">' + title + '</span><div class="modal-body-scroll">' +
+    '<div class="form-group"><input class="form-input" id="pmt_input1" placeholder="' + placeholder1 + '" /></div>';
+  if (placeholder2) html += '<div class="form-group"><input class="form-input" id="pmt_input2" placeholder="' + placeholder2 + '" /></div>';
+  html += '</div><div class="modal-actions"><button class="btn btn-secondary" onclick="this.closest(\'.modal-mask\').remove()">取消</button><button class="btn btn-primary" onclick="var v1=document.getElementById(\'pmt_input1\').value;var v2=document.getElementById(\'pmt_input2\')?document.getElementById(\'pmt_input2\').value:null;document.getElementById(\'promptModal\').remove();(' + cb.toString() + ')(v1,v2)">确认</button></div></div>';
+  mask.innerHTML = html;
+  document.body.appendChild(mask);
+  setTimeout(function(){document.getElementById('pmt_input1').focus()}, 100);
 }

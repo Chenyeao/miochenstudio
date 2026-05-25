@@ -105,6 +105,29 @@ function init() {
       avatar TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- 用户表（替代原来的"关于"页面）
+    CREATE TABLE IF NOT EXISTS user_account (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      nickname TEXT DEFAULT '',
+      age INTEGER DEFAULT 0,
+      gender TEXT DEFAULT '',
+      phone TEXT DEFAULT '',
+      avatar TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 后台管理员
+    CREATE TABLE IF NOT EXISTS admin_user (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      nickname TEXT DEFAULT '管理员',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   console.log('✅ 数据库初始化完成:', DB_PATH);
